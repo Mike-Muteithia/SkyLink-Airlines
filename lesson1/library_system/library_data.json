@@ -1,0 +1,48 @@
+{
+    "books": [
+        {
+            "title": "1984",
+            "author": "George Orwell",
+            "isbn": "111",
+            "is_borrowed": false
+        },
+        {
+            "title": "To Kill a Mockingbird",
+            "author": "Harper Lee",
+            "isbn": "222",
+            "is_borrowed": false
+        },
+        {
+            "title": "The Hobbit",
+            "author": "J.R.R. Tolkien",
+            "isbn": "333",
+            "is_borrowed": false
+        },
+        {
+            "title": "Atomic Habits",
+            "author": "James Clear",
+            "isbn": "444",
+            "is_borrowed": true
+        },
+        {
+            "title": "The Martian ",
+            "author": "Andy Weir",
+            "isbn": "555",
+            "is_borrowed": false
+        }
+    ],
+    "users": [
+        {
+            "name": "Alice",
+            "user_id": "U1",
+            "borrowed_books": []
+        },
+        {
+            "name": "Jamie Loius",
+            "user_id": "10020",
+            "borrowed_books": [
+                "444"
+            ]
+        }
+    ]
+}
