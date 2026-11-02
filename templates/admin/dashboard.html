@@ -4,7 +4,10 @@
 <div class="admin-dashboard">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
         <h2>Operations Dashboard</h2>
-        <a href="{{ url_for('admin_logout') }}" class="btn-primary" style="background-color: var(--ink);">Log Out</a>
+        <div>
+            <a href="{{ url_for('admin_bookings') }}" class="btn-primary" style="background-color: var(--aviation-blue); margin-right: 12px;">View All Bookings</a>
+            <a href="{{ url_for('admin_logout') }}" class="btn-primary" style="background-color: var(--ink);">Log Out</a>
+        </div>
     </div>
 
     <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 32px;">
@@ -21,8 +24,7 @@
     <div class="card" style="overflow-x: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3>Flight Management</h3>
-            <!-- A real application would link to an 'add_flight' route here -->
-            <button class="btn-primary" style="padding: 8px 16px; font-size: 14px;">+ Add Flight</button> 
+            <a href="{{ url_for('add_flight') }}" class="btn-primary" style="padding: 8px 16px; font-size: 14px;">+ Add Flight</a> 
         </div>
         
         <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 800px;">
@@ -48,9 +50,11 @@
                             {{ flight.available_seats }}
                         </span> / {{ flight.total_seats }}
                     </td>
-                    <td style="padding: 12px;">
-                        <a href="#" style="color: var(--aviation-blue); margin-right: 8px; font-size: 14px;">Edit</a>
-                        <a href="#" style="color: #ef4444; font-size: 14px;">Delete</a>
+                    <td style="padding: 12px; display: flex; gap: 12px; align-items: center;">
+                        <a href="{{ url_for('edit_flight', flight_id=flight.flight_id) }}" style="color: var(--aviation-blue); font-size: 14px;">Edit</a>
+                        <form action="{{ url_for('delete_flight', flight_id=flight.flight_id) }}" method="POST" onsubmit="return confirm('Delete this flight?');" style="margin: 0; padding: 0;">
+                            <button type="submit" style="background: none; border: none; color: #ef4444; font-size: 14px; cursor: pointer; text-decoration: underline; padding: 0;">Delete</button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

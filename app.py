@@ -220,5 +220,111 @@ def admin_dashboard():
     
     return render_template('admin/dashboard.html', flights=flights, total_bookings=bookings_count)
 
+# --- MISSING ADMIN FLIGHT CRUD ROUTES ---
+
+@app.route('/admin/flight/add', methods=['GET', 'POST'])
+def add_flight():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+        
+    if request.method == 'POST':
+        db = get_db()
+        flight_number = request.form.get('flight_number')
+        airline_name = request.form.get('airline_name')
+        departure_city = request.form.get('departure_city')
+        destination_city = request.form.get('destination_city')
+        departure_date = request.form.get('departure_date')
+        departure_time = request.form.get('departure_time')
+        arrival_time = request.form.get('arrival_time')
+        travel_class = request.form.get('travel_class')
+        ticket_price = float(request.form.get('ticket_price'))
+        total_seats = int(request.form.get('total_seats'))
+        
+        try:
+            db.execute('''
+                INSERT INTO flights (flight_number, airline_name, departure_city, destination_city, departure_date, departure_time, arrival_time, travel_class, ticket_price, total_seats, available_seats)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (flight_number, airline_name, departure_city, destination_city, departure_date, departure_time, arrival_time, travel_class, ticket_price, total_seats, total_seats))
+            db.commit()
+            flash("Flight added successfully.", "success")
+            return redirect(url_for('admin_dashboard'))
+        except sqlite3.IntegrityError:
+            flash("Flight number already exists.", "error")
+            
+    return render_template('admin/add_flight.html')
+
+@app.route('/admin/flight/edit/<int:flight_id>', methods=['GET', 'POST'])
+def edit_flight(flight_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+        
+    db = get_db()
+    flight = db.execute('SELECT * FROM flights WHERE flight_id = ?', (flight_id,)).fetchone()
+    
+    if request.method == 'POST':
+        departure_date = request.form.get('departure_date')
+        departure_time = request.form.get('departure_time')
+        arrival_time = request.form.get('arrival_time')
+        ticket_price = float(request.form.get('ticket_price'))
+        
+        db.execute('''
+            UPDATE flights 
+            SET departure_date = ?, departure_time = ?, arrival_time = ?, ticket_price = ?
+            WHERE flight_id = ?
+        ''', (departure_date, departure_time, arrival_time, ticket_price, flight_id))
+        db.commit()
+        flash("Flight updated successfully.", "success")
+        return redirect(url_for('admin_dashboard'))
+        
+    return render_template('admin/edit_flight.html', flight=flight)
+
+@app.route('/admin/flight/delete/<int:flight_id>', methods=['POST'])
+def delete_flight(flight_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+        
+    db = get_db()
+    # Check if bookings exist for this flight to prevent orphaned data
+    bookings = db.execute('SELECT COUNT(*) FROM bookings WHERE flight_id = ?', (flight_id,)).fetchone()[0]
+    
+    if bookings > 0:
+        flash("Cannot delete flight. Existing bookings depend on this record.", "error")
+    else:
+        db.execute('DELETE FROM flights WHERE flight_id = ?', (flight_id,))
+        db.commit()
+        flash("Flight deleted successfully.", "success")
+        
+    return redirect(url_for('admin_dashboard'))
+
+# --- MISSING ADMIN BOOKING MANAGEMENT ROUTE ---
+
+@app.route('/admin/bookings', methods=['GET'])
+def admin_bookings():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+        
+    db = get_db()
+    search_query = request.args.get('search', '')
+    
+    if search_query:
+        bookings = db.execute('''
+            SELECT b.*, p.full_name, p.email, f.flight_number, f.departure_date
+            FROM bookings b
+            JOIN passengers p ON b.passenger_id = p.passenger_id
+            JOIN flights f ON b.flight_id = f.flight_id
+            WHERE b.booking_reference LIKE ? OR f.flight_number LIKE ?
+            ORDER BY b.booking_date DESC
+        ''', ('%'+search_query+'%', '%'+search_query+'%')).fetchall()
+    else:
+        bookings = db.execute('''
+            SELECT b.*, p.full_name, p.email, f.flight_number, f.departure_date
+            FROM bookings b
+            JOIN passengers p ON b.passenger_id = p.passenger_id
+            JOIN flights f ON b.flight_id = f.flight_id
+            ORDER BY b.booking_date DESC
+        ''').fetchall()
+        
+    return render_template('admin/bookings.html', bookings=bookings, search_query=search_query)
+
 if __name__ == '__main__':
     app.run(debug=True)
