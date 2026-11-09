@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white"><h5 class="mb-0">Apply for Loan</h5></div>
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ form.member_id.label(class="form-label") }}
+                        {{ form.member_id(class="form-select") }}
+                        <div class="form-text">Eligibility limit is 3x the member's current savings.</div>
+                    </div>
+                    <div class="mb-3">
+                        {{ form.principal.label(class="form-label") }}
+                        {{ form.principal(class="form-control", step="100") }}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.duration_months.label(class="form-label") }}
+                        {{ form.duration_months(class="form-select") }}
+                    </div>
+                    {{ form.submit(class="btn btn-warning w-100 text-dark fw-bold") }}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white"><h5 class="mb-0">Loan Applications & Portfolio</h5></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Applicant</th>
+                                <th>Principal</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for l in loans %}
+                            <tr>
+                                <td>{{ l.member.full_name }}</td>
+                                <td>KES {{ "{:,.2f}".format(l.principal) }}</td>
+                                <td>
+                                    <div class="small text-muted">Total: KES {{ "{:,.2f}".format(l.total_payable) }}</div>
+                                    <strong>KES {{ "{:,.2f}".format(l.remaining_balance) }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge {% if l.status == 'Approved' %}bg-success{% elif l.status == 'Pending' %}bg-warning text-dark{% elif l.status == 'Settled' %}bg-primary{% else %}bg-secondary{% endif %}">
+                                        {{ l.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if l.status == 'Pending' %}
+                                    <form method="POST" action="{{ url_for('loans.action', loan_id=l.id, action='approve') }}" class="d-inline">
+                                        {{ action_form.hidden_tag() }}
+                                        <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('loans.action', loan_id=l.id, action='reject') }}" class="d-inline">
+                                        {{ action_form.hidden_tag() }}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+                                    </form>
+                                    {% elif l.status == 'Approved' %}
+                                    <a href="{{ url_for('loans.repay', loan_id=l.id) }}" class="btn btn-sm btn-outline-primary">Manage/Repay</a>
+                                    {% else %}
+                                    <span class="text-muted small">Locked</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center py-3">No loans applied.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

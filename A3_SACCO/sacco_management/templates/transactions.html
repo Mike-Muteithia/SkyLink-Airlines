@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white"><h5 class="mb-0">Record Transaction</h5></div>
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ form.member_id.label(class="form-label") }}
+                        {{ form.member_id(class="form-select") }}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.transaction_type.label(class="form-label") }}
+                        {{ form.transaction_type(class="form-select") }}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.amount.label(class="form-label") }}
+                        {{ form.amount(class="form-control", step="0.01") }}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.reference.label(class="form-label") }}
+                        {{ form.reference(class="form-control", placeholder="e.g. QKH7189XXX") }}
+                    </div>
+                    {{ form.submit(class="btn btn-success w-100") }}
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white"><h5 class="mb-0">Recent Financial Transactions</h5></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Member</th>
+                                <th>Reference</th>
+                                <th>Amount</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in transactions %}
+                            <tr>
+                                <td>{{ t.date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>{{ t.member.full_name }} ({{ t.member.member_no }})</td>
+                                <td><code>{{ t.reference or 'CASH' }}</code></td>
+                                <td class="fw-bold {% if t.transaction_type == 'Withdrawal' %}text-danger{% else %}text-success{% endif %}">
+                                    KES {{ "{:,.2f}".format(t.amount) }}
+                                </td>
+                                <td><span class="badge bg-secondary">{{ t.transaction_type }}</span></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center py-3">No transactions logged yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
