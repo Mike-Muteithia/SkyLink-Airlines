@@ -4,6 +4,7 @@ import sqlite3
 from werkzeug.security import check_password_hash
 import uuid
 import datetime
+import difflib
 import re
 
 app = Flask(__name__)
@@ -26,6 +27,50 @@ def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
+
+def check_flight_availability(search_query: str) -> str:
+    """
+    Searches the database for available flights based on a date, day, month, or year.
+    Args:
+        search_query: The timeframe to search (e.g., '2026-11-15', 'November', '2026').
+    """
+    db = get_db()
+    cur = db.execute('''
+        SELECT flight_number, airline_name, departure_city, destination_city, departure_date, departure_time, ticket_price 
+        FROM flights 
+        WHERE departure_date LIKE ? AND available_seats > 0 
+        ORDER BY departure_date ASC LIMIT 5
+    ''', (f'%{search_query}%',))
+    
+    flights = cur.fetchall()
+    if not flights:
+        return "No flights available for that timeframe."
+        
+    result = "Here are the available flights:<br>"
+    for f in flights:
+        result += f"&bull; <strong>{f['airline_name']} {f['flight_number']}</strong>: {f['departure_city']} to {f['destination_city']} on {f['departure_date']} at {f['departure_time']} (KSh {f['ticket_price']})<br>"
+    return result
+
+def check_booking_status(booking_reference: str) -> str:
+    """
+    Retrieves the booking status and details for a specific flight ticket reference.
+    Args:
+        booking_reference: The ticket reference code (e.g., 'SLK-1BF4A3').
+    """
+    db = get_db()
+    booking = db.execute('''
+        SELECT b.booking_status, b.total_cost, f.departure_city, f.destination_city, f.departure_date
+        FROM bookings b
+        JOIN flights f ON b.flight_id = f.flight_id
+        WHERE b.booking_reference = ?
+    ''', (booking_reference,)).fetchone()
+    
+    if booking:
+        return (f"<strong>Booking Status:</strong> {booking['booking_status']}<br>"
+                f"<strong>Itinerary:</strong> {booking['departure_city']} to {booking['destination_city']} on {booking['departure_date']}<br>"
+                f"<strong>Total Cost:</strong> KSh {booking['total_cost']}")
+    return "No booking found with that reference number."
+
 
 # --- PUBLIC ROUTES ---
 
@@ -351,76 +396,95 @@ def admin_bookings():
     return render_template('admin/bookings.html', bookings=bookings, search_query=search_query)
 
 # --- CHATBOT SOCKETIO LOGIC ---
-# --- CHATBOT SOCKETIO LOGIC ---
 @socketio.on('user_message')
 def handle_user_message(data):
     user_text = data.get('message', '').lower()
-    bot_response = "I'm sorry, I didn't understand that. You can ask me about our destinations, baggage policy, or how to book a flight."
-
-    # 1. Static Rules
-    if 'hello' in user_text or 'hi' in user_text:
-        bot_response = "Hello! Welcome to SkyLink Airlines. How can I assist you with your travel plans today?"
-    elif 'destination' in user_text or 'where do you fly' in user_text:
-        bot_response = "SkyLink currently serves major regional hubs including Nairobi (NBO), Mombasa (MBA), and Kisumu (KIS)."
-    elif 'baggage' in user_text or 'luggage' in user_text:
-        bot_response = "Economy class includes 1 checked bag (23kg) and 1 carry-on. Business class includes 2 checked bags (32kg each)."
     
-    # 2. Dynamic Database Queries (Flight Availability)
-    elif 'flight' in user_text or 'available' in user_text:
-        db = get_db()
+    # Clean punctuation for accurate typo matching
+    clean_text = re.sub(r'[^\w\s]', '', user_text)
+    words = clean_text.split()
+    
+    bot_response = ""
+
+    # 1. GUARDRAIL: Sensitive Information Block
+    sensitive_keywords = ['password', 'id', 'passport', 'credit', 'card', 'payment', 'social']
+    if any(keyword in words for keyword in sensitive_keywords):
+        bot_response = "<strong>Security Alert:</strong> I cannot process sensitive information. Please do not share passwords, ID numbers, or payment details."
+        emit('bot_response', {'message': bot_response})
+        return
+
+    # 2. CAPABILITY: Booking Lookup (Matches exactly SLK- followed by 6 alphanumeric chars)
+    booking_match = re.search(r'slk-[a-z0-9]{6}', user_text)
+    if booking_match:
+        ref = booking_match.group(0).upper()
+        bot_response = check_booking_status(ref)
+        emit('bot_response', {'message': bot_response})
+        return
+
+    # 3. CAPABILITY: Flight Availability & Date Parsing
+    flight_keywords = ['flight', 'flights', 'fly', 'available', 'book', 'ticket', 'tickets']
+    is_flight_query = any(difflib.get_close_matches(word, flight_keywords, cutoff=0.7) for word in words)
+    
+    if is_flight_query:
+        # Match explicit dates (YYYY-MM-DD)
+        date_match = re.search(r'\d{4}-\d{2}-\d{2}', user_text)
         
-        # Map month names to SQLite date format numbers
+        # Match Years
+        year_match = re.search(r'202[6-9]', user_text)
+        
+        # Fuzzy match months to catch typos like "novmbr"
         months = {
-            'january': '01', 'february': '02', 'march': '03', 'april': '04', 
-            'may': '05', 'june': '06', 'july': '07', 'august': '08', 
-            'september': '09', 'october': '10', 'november': '11', 'december': '12'
+            'january': '01', 'jan': '01', 'february': '02', 'feb': '02', 
+            'march': '03', 'mar': '03', 'april': '04', 'apr': '04', 
+            'may': '05', 'june': '06', 'july': '07', 'august': '08', 'aug': '08', 
+            'september': '09', 'sept': '09', 'october': '10', 'oct': '10', 
+            'november': '11', 'nov': '11', 'december': '12', 'dec': '12'
         }
         
-        found_month = next((num for name, num in months.items() if name in user_text), None)
-        date_match = re.search(r'\d{4}-\d{2}-\d{2}', user_text)
+        found_month_num = None
+        for word in words:
+            matches = difflib.get_close_matches(word, months.keys(), n=1, cutoff=0.7)
+            if matches:
+                found_month_num = months[matches[0]]
+                break
 
-        # Scenario A: User asks for a specific date (e.g., "flights on 2026-11-15")
+        # Route the extracted timeframe to the database tool
         if date_match:
-            search_date = date_match.group(0)
-            cur = db.execute("SELECT * FROM flights WHERE departure_date = ? AND available_seats > 0 LIMIT 5", (search_date,))
-            flights = cur.fetchall()
-            if flights:
-                bot_response = f"<strong>Flights on {search_date}:</strong><br>"
-                for f in flights:
-                    bot_response += f"&bull; {f['airline_name']} {f['flight_number']} ({f['departure_city']} to {f['destination_city']}) at {f['departure_time']}<br>"
-            else:
-                bot_response = f"I couldn't find any flights on {search_date}."
-                
-        # Scenario B: User asks for a specific month (e.g., "flights in november")
-        elif found_month:
-            cur = db.execute(f"SELECT * FROM flights WHERE departure_date LIKE '%-{found_month}-%' AND available_seats > 0 ORDER BY departure_date ASC LIMIT 5")
-            flights = cur.fetchall()
-            if flights:
-                month_name = [name.capitalize() for name, num in months.items() if num == found_month][0]
-                bot_response = f"<strong>Flights in {month_name}:</strong><br>"
-                for f in flights:
-                    bot_response += f"&bull; {f['flight_number']} ({f['departure_city']} to {f['destination_city']}) on {f['departure_date']}<br>"
-            else:
-                bot_response = f"I couldn't find any flights scheduled for that month."
-                
-        # Scenario C: General availability ("What flights are available?")
+            search_query = date_match.group(0)
+        elif found_month_num:
+            search_query = f"-{found_month_num}-" # e.g. "-11-" for November
+        elif year_match:
+            search_query = year_match.group(0)
         else:
-            cur = db.execute("SELECT * FROM flights WHERE available_seats > 0 ORDER BY departure_date ASC LIMIT 5")
-            flights = cur.fetchall()
-            if flights:
-                bot_response = "<strong>Here are our next available flights:</strong><br>"
-                for f in flights:
-                    bot_response += f"&bull; {f['flight_number']} ({f['departure_city']} to {f['destination_city']}) on {f['departure_date']}<br>"
-                bot_response += "<em>Visit the Search page to see our full catalog!</em>"
-            else:
-                bot_response = "We currently have no available flights."
+            search_query = "2026" # Default assumption if they just ask for "flights"
+        
+        bot_response = check_flight_availability(search_query)
+        emit('bot_response', {'message': bot_response})
+        return
 
-    elif 'book' in user_text or 'reservation' in user_text:
-        bot_response = "You can book a flight directly from our Home page. Just enter your origin, destination, and travel dates!"
-    elif 'contact' in user_text or 'help' in user_text:
-        bot_response = "You can reach our support team at support@skylinkairlines.com or call +254 700 000 000."
-
-    # Send the response back to the specific client
+    # 4. CAPABILITY: General Company Info
+    company_keywords = ['about', 'company', 'contact', 'support', 'destinations', 'baggage', 'luggage', 'help']
+    is_company_query = any(difflib.get_close_matches(word, company_keywords, cutoff=0.7) for word in words)
+    
+    if is_company_query or 'skylink' in user_text:
+        if 'contact' in user_text or 'support' in user_text or 'help' in user_text:
+            bot_response = "You can reach SkyLink Airlines support at support@skylinkairlines.com or call +254 700 000 000."
+        elif 'baggage' in user_text or 'luggage' in user_text:
+            bot_response = "Economy class includes 1 checked bag (23kg) and 1 carry-on. Business class includes 2 checked bags (32kg each)."
+        elif 'destination' in user_text or 'where' in user_text:
+            bot_response = "We fly to major hubs including Nairobi (NBO), Mombasa (MBA), Kisumu (KIS), Malindi (MYD), and Eldoret (EDL)."
+        else:
+            bot_response = "SkyLink Airlines is your premier regional carrier. How can I help you with your travel plans today?"
+        
+        emit('bot_response', {'message': bot_response})
+        return
+        
+    # 5. GUARDRAIL: Out of Scope Refusal
+    bot_response = (
+        "I am the SkyLink Airlines assistant. I can only answer questions about our company, "
+        "check flight availability (e.g., 'flights in November'), or look up booking statuses "
+        "(e.g., 'SLK-XXXXXX'). How can I help you with these topics?"
+    )
     emit('bot_response', {'message': bot_response})
 
 if __name__ == '__main__':
